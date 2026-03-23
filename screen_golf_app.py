@@ -1,6 +1,6 @@
 """
-🏌️ 스크린골프 대전 관리 프로그램
-Screen Golf Tournament Management System
+⛳ 스크린골프 결과 관리 프로그램
+Screen Golf Result Management System
 """
 
 import streamlit as st
@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 DATA_DIR = "golf_data"
 GAMES_FILE = os.path.join(DATA_DIR, "games.json")
 RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
+PLAYERS_FILE = os.path.join(DATA_DIR, "players.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -65,6 +66,15 @@ def get_games_df() -> pd.DataFrame:
 def get_results_df() -> pd.DataFrame:
     data = load_json(RESULTS_FILE)
     return pd.DataFrame(data) if data else pd.DataFrame()
+
+
+def get_players_roster() -> list:
+    """등록된 선수 명단 로드"""
+    return load_json(PLAYERS_FILE)
+
+
+def save_players_roster(players: list):
+    save_json(PLAYERS_FILE, players)
 
 
 # ──────────────────────────────────────────
@@ -248,11 +258,11 @@ init_session()
 # 사이드바 네비게이션
 # ──────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⛳ 스크린골프 대전")
+    st.markdown("## ⛳ 스크린골프 결과")
     st.markdown("---")
     menu = st.radio(
         "메뉴",
-        ["🏌️ 경기 입력", "📊 결과 확인", "📈 누적 통계", "📋 전체 경기 기록"],
+        ["🏌️ 경기 입력", "📊 결과 확인", "📈 누적 통계", "📋 전체 경기 기록", "👥 선수 관리"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -289,8 +299,8 @@ with st.sidebar:
 # 1. 경기 입력
 # ══════════════════════════════════════════
 if "경기 입력" in menu:
-    st.markdown('<div class="main-title">⛳ 스크린골프 대전 관리</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Screen Golf Tournament Manager</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">⛳ 스크린골프 결과</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Screen Golf Result Manager</div>', unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["① 경기 정보", "② 참가자 등록", "③ 타수 입력 & 저장"])
 
@@ -339,12 +349,40 @@ if "경기 입력" in menu:
     with tab2:
         st.markdown('<div class="section-header">참가자 등록</div>', unsafe_allow_html=True)
 
+        roster = get_players_roster()
+        roster_names = [p["name"] for p in roster]
+
+        # 선수 명단에서 불러오기
+        if roster:
+            st.markdown("**📋 등록된 선수 명단에서 선택**")
+            col_sel, col_sel_btn = st.columns([3, 1])
+            with col_sel:
+                selected_from_roster = st.selectbox(
+                    "선수 선택",
+                    ["(직접 입력)"] + roster_names,
+                    key="roster_select",
+                    label_visibility="collapsed",
+                )
+            with col_sel_btn:
+                if st.button("불러오기 ⬇️", use_container_width=True, key="load_from_roster"):
+                    if selected_from_roster != "(직접 입력)":
+                        matched = next((p for p in roster if p["name"] == selected_from_roster), None)
+                        if matched:
+                            st.session_state["prefill_name"] = matched["name"]
+                            st.session_state["prefill_handi"] = matched["handicap"]
+                            st.rerun()
+            st.markdown("---")
+
+        # 이름/핸디 입력 (불러오기로 미리 채워질 수 있음)
+        prefill_name = st.session_state.pop("prefill_name", "")
+        prefill_handi = st.session_state.pop("prefill_handi", 0.0)
+
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
-            new_name = st.text_input("👤 이름", key="new_name_input")
+            new_name = st.text_input("👤 이름", value=prefill_name, key="new_name_input")
         with col2:
             new_handicap = st.number_input(
-                "🎯 G핸디", min_value=-30.0, max_value=50.0, value=0.0, step=0.1, format="%.1f", key="new_handi_input"
+                "🎯 G핸디", min_value=-30.0, max_value=50.0, value=float(prefill_handi), step=0.1, format="%.1f", key="new_handi_input"
             )
         with col3:
             if st.session_state["game_mode"] == "팀전":
@@ -677,6 +715,68 @@ elif "결과 확인" in menu:
             )
             st.plotly_chart(fig_team, use_container_width=True)
 
+        # ── 결과 수정 기능
+        st.markdown("---")
+        st.markdown('<div class="section-header">✏️ 결과 수정</div>', unsafe_allow_html=True)
+        player_names = game_results["name"].tolist()
+        edit_player = st.selectbox("수정할 선수 선택", player_names, key="edit_player_select")
+        if edit_player:
+            player_row = game_results[game_results["name"] == edit_player].iloc[0]
+            col_e1, col_e2, col_e3 = st.columns(3)
+            with col_e1:
+                edit_score = st.number_input(
+                    "타수", min_value=40, max_value=180,
+                    value=int(player_row["score"]), key="edit_score"
+                )
+            with col_e2:
+                edit_handi = st.number_input(
+                    "G핸디", min_value=-30.0, max_value=50.0,
+                    value=float(player_row["handicap"]), step=0.1, format="%.1f", key="edit_handi"
+                )
+            with col_e3:
+                if selected_game["mode"] == "팀전":
+                    team_options = ["A팀", "B팀", "C팀", "D팀"]
+                    cur_team = player_row.get("team") or "A팀"
+                    edit_team = st.selectbox("팀", team_options,
+                                             index=team_options.index(cur_team) if cur_team in team_options else 0,
+                                             key="edit_team")
+                else:
+                    edit_team = None
+                    st.write("")
+
+            if st.button("💾 수정 저장", use_container_width=True, type="primary"):
+                results_all = load_json(RESULTS_FILE)
+                new_net = edit_score - edit_handi
+                for r in results_all:
+                    if r["game_id"] == game_id and r["name"] == edit_player:
+                        r["score"] = edit_score
+                        r["handicap"] = edit_handi
+                        r["net_score"] = new_net
+                        if edit_team is not None:
+                            r["team"] = edit_team
+                # 순위 재계산
+                game_records = [r for r in results_all if r["game_id"] == game_id]
+                if selected_game["mode"] == "개인전":
+                    sorted_r = sorted(game_records, key=lambda x: x["net_score"])
+                    for rank_i, r in enumerate(sorted_r, 1):
+                        for orig in results_all:
+                            if orig["game_id"] == game_id and orig["name"] == r["name"]:
+                                orig["rank"] = rank_i
+                                break
+                else:
+                    from collections import defaultdict
+                    team_nets = defaultdict(float)
+                    for r in game_records:
+                        team_nets[r["team"]] += r["net_score"]
+                    winner_team = min(team_nets, key=team_nets.get)
+                    for orig in results_all:
+                        if orig["game_id"] == game_id:
+                            orig["is_winner"] = orig["team"] == winner_team
+                            orig["rank"] = 1 if orig["is_winner"] else 2
+                save_json(RESULTS_FILE, results_all)
+                st.success(f"✅ {edit_player} 결과가 수정되었습니다!")
+                st.rerun()
+
 
 # ══════════════════════════════════════════
 # 3. 누적 통계
@@ -927,3 +1027,82 @@ elif "경기 기록" in menu:
                 save_json(RESULTS_FILE, new_results)
                 st.success("삭제 완료!")
                 st.rerun()
+
+
+# ══════════════════════════════════════════
+# 5. 선수 관리
+# ══════════════════════════════════════════
+elif "선수 관리" in menu:
+    st.markdown('<div class="main-title">👥 선수 관리</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Player Roster Management</div>', unsafe_allow_html=True)
+
+    roster = get_players_roster()
+
+    # 신규 선수 등록
+    st.markdown('<div class="section-header">신규 선수 등록</div>', unsafe_allow_html=True)
+    col_n1, col_n2, col_n3 = st.columns([2, 1, 1])
+    with col_n1:
+        new_pname = st.text_input("👤 이름", key="roster_new_name")
+    with col_n2:
+        new_phandi = st.number_input(
+            "🎯 G핸디", min_value=-30.0, max_value=50.0, value=0.0, step=0.1, format="%.1f", key="roster_new_handi"
+        )
+    with col_n3:
+        st.write("")
+        st.write("")
+        if st.button("➕ 등록", use_container_width=True):
+            if not new_pname.strip():
+                st.error("이름을 입력해주세요!")
+            elif any(p["name"] == new_pname.strip() for p in roster):
+                st.error("이미 등록된 선수입니다!")
+            else:
+                roster.append({"name": new_pname.strip(), "handicap": new_phandi})
+                save_players_roster(roster)
+                st.success(f"✅ {new_pname.strip()} 등록 완료!")
+                st.rerun()
+
+    # 등록된 선수 목록 & 수정/삭제
+    st.markdown('<div class="section-header">등록된 선수 목록</div>', unsafe_allow_html=True)
+    if not roster:
+        st.info("등록된 선수가 없습니다. 선수를 추가해주세요.")
+    else:
+        header_cols = st.columns([3, 2, 2, 1, 1])
+        header_cols[0].markdown("**이름**")
+        header_cols[1].markdown("**G핸디**")
+        header_cols[2].markdown("**수정**")
+        header_cols[3].markdown("")
+        header_cols[4].markdown("")
+
+        for i, player in enumerate(roster):
+            c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 1, 1])
+            with c1:
+                st.write(f"**{player['name']}**")
+            with c2:
+                edit_h = st.number_input(
+                    "", min_value=-30.0, max_value=50.0,
+                    value=float(player["handicap"]), step=0.1, format="%.1f",
+                    key=f"roster_handi_{i}",
+                    label_visibility="collapsed"
+                )
+            with c3:
+                edit_n = st.text_input(
+                    "", value=player["name"], key=f"roster_name_{i}",
+                    label_visibility="collapsed"
+                )
+            with c4:
+                if st.button("💾", key=f"roster_save_{i}", help="저장"):
+                    if not edit_n.strip():
+                        st.error("이름을 입력해주세요!")
+                    elif edit_n.strip() != player["name"] and any(p["name"] == edit_n.strip() for p in roster):
+                        st.error("이미 같은 이름의 선수가 있습니다!")
+                    else:
+                        roster[i]["name"] = edit_n.strip()
+                        roster[i]["handicap"] = edit_h
+                        save_players_roster(roster)
+                        st.success(f"✅ {edit_n.strip()} 정보 수정 완료!")
+                        st.rerun()
+            with c5:
+                if st.button("❌", key=f"roster_del_{i}", help="삭제"):
+                    roster.pop(i)
+                    save_players_roster(roster)
+                    st.rerun()
