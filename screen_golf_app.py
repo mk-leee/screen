@@ -11,7 +11,7 @@ import base64
 from datetime import date
 import plotly.express as px
 import plotly.graph_objects as go
-import anthropic
+import google.generativeai as genai
 
 # ──────────────────────────────────────────
 # 설정 & 상수
@@ -80,45 +80,30 @@ def save_players_roster(players: list):
 
 
 def analyze_golf_screenshot(image_bytes: bytes, media_type: str) -> list:
-    """Claude Vision으로 스크린골프 결과 스크린샷 분석 → [{name, score}] 반환"""
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+    """Gemini Vision으로 스크린골프 결과 스크린샷 분석 → [{name, score}] 반환"""
+    api_key = st.secrets.get("GOOGLE_AI_API_KEY", "")
     if not api_key:
-        st.error("⚠️ Streamlit Secrets에 ANTHROPIC_API_KEY를 설정해주세요.")
+        st.error("⚠️ Streamlit Secrets에 GOOGLE_AI_API_KEY를 설정해주세요.")
         return []
 
-    client_ai = anthropic.Anthropic(api_key=api_key)
-    image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
-    response = client_ai.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=1024,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": image_data,
-                    },
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        "이 스크린골프 결과 이미지에서 각 선수의 정보를 추출해주세요.\n\n"
-                        "각 선수 카드에서:\n"
-                        "- name: 닉네임/이름 (상단에 표시된 텍스트)\n"
-                        "- score: 최종 타수 (가장 크게 표시된 숫자, 괄호 안 +/- 숫자 제외)\n\n"
-                        "JSON 배열 형식으로만 답변하세요 (다른 설명 없이):\n"
-                        '[{"name": "선수이름", "score": 숫자}, ...]'
-                    ),
-                },
-            ],
-        }],
+    import PIL.Image
+    import io
+    image = PIL.Image.open(io.BytesIO(image_bytes))
+
+    prompt = (
+        "이 스크린골프 결과 이미지에서 각 선수의 정보를 추출해주세요.\n\n"
+        "각 선수 카드에서:\n"
+        "- name: 닉네임/이름 (상단에 표시된 텍스트)\n"
+        "- score: 최종 타수 (가장 크게 표시된 숫자, 괄호 안 +/- 숫자 제외)\n\n"
+        "JSON 배열 형식으로만 답변하세요 (다른 설명 없이):\n"
+        '[{"name": "선수이름", "score": 숫자}, ...]'
     )
 
-    raw = response.content[0].text.strip()
+    response = model.generate_content([prompt, image])
+    raw = response.text.strip()
     if "```" in raw:
         parts = raw.split("```")
         raw = parts[1] if len(parts) > 1 else raw
