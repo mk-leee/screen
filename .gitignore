@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+
+# Runtime data (game records - do not commit personal data)
+golf_data/
+data/
+
+# Environment
+.env
+.venv
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+files.zip
+mnt/
