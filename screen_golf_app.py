@@ -836,12 +836,12 @@ elif "결과 확인" in menu:
             with col_e1:
                 edit_score = st.number_input(
                     "타수", min_value=40, max_value=180,
-                    value=int(player_row["score"]), key="edit_score"
+                    value=int(player_row["score"]), key=f"edit_score_{edit_player}"
                 )
             with col_e2:
                 edit_handi = st.number_input(
                     "G핸디", min_value=-30.0, max_value=50.0,
-                    value=float(player_row["handicap"]), step=0.1, format="%.1f", key="edit_handi"
+                    value=float(player_row["handicap"]), step=0.1, format="%.1f", key=f"edit_handi_{edit_player}"
                 )
             with col_e3:
                 if selected_game["mode"] == "팀전":
@@ -849,7 +849,7 @@ elif "결과 확인" in menu:
                     cur_team = player_row.get("team") or "A팀"
                     edit_team = st.selectbox("팀", team_options,
                                              index=team_options.index(cur_team) if cur_team in team_options else 0,
-                                             key="edit_team")
+                                             key=f"edit_team_{edit_player}")
                 else:
                     edit_team = None
                     st.write("")
