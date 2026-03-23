@@ -7,9 +7,11 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import base64
 from datetime import date
 import plotly.express as px
 import plotly.graph_objects as go
+import google.generativeai as genai
 
 # ──────────────────────────────────────────
 # 설정 & 상수
@@ -75,6 +77,39 @@ def get_players_roster() -> list:
 
 def save_players_roster(players: list):
     save_json(PLAYERS_FILE, players)
+
+
+def analyze_golf_screenshot(image_bytes: bytes, media_type: str) -> list:
+    """Gemini Vision으로 스크린골프 결과 스크린샷 분석 → [{name, score}] 반환"""
+    api_key = st.secrets.get("GOOGLE_AI_API_KEY", "")
+    if not api_key:
+        st.error("⚠️ Streamlit Secrets에 GOOGLE_AI_API_KEY를 설정해주세요.")
+        return []
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    import PIL.Image
+    import io
+    image = PIL.Image.open(io.BytesIO(image_bytes))
+
+    prompt = (
+        "이 스크린골프 결과 이미지에서 각 선수의 정보를 추출해주세요.\n\n"
+        "각 선수 카드에서:\n"
+        "- name: 닉네임/이름 (상단에 표시된 텍스트)\n"
+        "- score: 최종 타수 (가장 크게 표시된 숫자, 괄호 안 +/- 숫자 제외)\n\n"
+        "JSON 배열 형식으로만 답변하세요 (다른 설명 없이):\n"
+        '[{"name": "선수이름", "score": 숫자}, ...]'
+    )
+
+    response = model.generate_content([prompt, image])
+    raw = response.text.strip()
+    if "```" in raw:
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else raw
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
 
 
 # ──────────────────────────────────────────
@@ -246,6 +281,7 @@ def init_session():
         "game_mode": "개인전",
         "current_game_id": None,
         "result_saved": False,
+        "screenshot_players": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -349,6 +385,77 @@ if "경기 입력" in menu:
     with tab2:
         st.markdown('<div class="section-header">참가자 등록</div>', unsafe_allow_html=True)
 
+        # 📸 스크린샷 자동 입력
+        with st.expander("📸 스크린샷에서 자동 입력", expanded=False):
+            uploaded_img = st.file_uploader(
+                "스크린골프 결과 스크린샷을 업로드하세요",
+                type=["jpg", "jpeg", "png", "webp"],
+                key="screenshot_uploader",
+            )
+            if uploaded_img is not None:
+                st.image(uploaded_img, width=300)
+                if st.button("🔍 선수 정보 자동 추출", use_container_width=True):
+                    with st.spinner("Claude가 스크린샷을 분석 중입니다..."):
+                        img_bytes = uploaded_img.read()
+                        ext = uploaded_img.type  # e.g. "image/jpeg"
+                        try:
+                            extracted = analyze_golf_screenshot(img_bytes, ext)
+                            if extracted:
+                                st.session_state["screenshot_players"] = extracted
+                                st.success(f"✅ {len(extracted)}명의 선수 정보를 추출했습니다!")
+                            else:
+                                st.warning("선수 정보를 추출하지 못했습니다.")
+                        except Exception as e:
+                            st.error(f"분석 오류: {e}")
+
+            if st.session_state.get("screenshot_players"):
+                extracted = st.session_state["screenshot_players"]
+                st.markdown("**추출된 선수 목록 (핸디 확인 후 추가)**")
+                for ep in extracted:
+                    c1, c2, c3 = st.columns([2, 1, 1])
+                    with c1:
+                        st.write(f"**{ep['name']}**  타수: {ep['score']}")
+                    with c2:
+                        ep_handi = st.number_input(
+                            "G핸디", min_value=-30.0, max_value=50.0, value=0.0,
+                            step=0.1, format="%.1f",
+                            key=f"ep_handi_{ep['name']}",
+                            label_visibility="collapsed",
+                        )
+                    with c3:
+                        if st.button("추가", key=f"ep_add_{ep['name']}"):
+                            name = ep["name"]
+                            if any(p["name"] == name for p in st.session_state["players"]):
+                                st.warning(f"{name} 이미 등록됨")
+                            else:
+                                team = None
+                                if st.session_state["game_mode"] == "팀전":
+                                    team = "A팀"
+                                st.session_state["players"].append({
+                                    "name": name,
+                                    "handicap": ep_handi,
+                                    "score": int(ep["score"]),
+                                    "team": team,
+                                })
+                                st.success(f"✅ {name} 추가!")
+                                st.rerun()
+                if st.button("📋 전체 추가 (핸디 0으로)", use_container_width=True):
+                    added = 0
+                    for ep in extracted:
+                        if not any(p["name"] == ep["name"] for p in st.session_state["players"]):
+                            st.session_state["players"].append({
+                                "name": ep["name"],
+                                "handicap": 0.0,
+                                "score": int(ep["score"]),
+                                "team": None,
+                            })
+                            added += 1
+                    if added:
+                        st.success(f"✅ {added}명 추가 완료! (핸디는 아래에서 수정하세요)")
+                        st.session_state["screenshot_players"] = []
+                        st.rerun()
+
+        st.markdown("---")
         roster = get_players_roster()
         roster_names = [p["name"] for p in roster]
 
