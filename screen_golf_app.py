@@ -903,8 +903,21 @@ elif "누적 통계" in menu:
         results_df["net_score"] = pd.to_numeric(results_df["net_score"], errors="coerce")
         results_df["score"] = pd.to_numeric(results_df["score"], errors="coerce")
 
-        stat_tab1, stat_tab2 = st.tabs(["👤 개인별 통계", "📊 경기 트렌드"])
+        stat_tab1, stat_tab2, stat_tab3, stat_tab4 = st.tabs(
+            ["👤 개인별 통계", "🎯 G핸디별 분석", "👥 팀별 분석", "📊 경기 트렌드"]
+        )
 
+        # ── 공통 전처리 ─────────────────────────────
+        results_df["handicap"] = pd.to_numeric(results_df["handicap"], errors="coerce")
+        results_df["rank"] = pd.to_numeric(results_df["rank"], errors="coerce")
+
+        _chart_layout = dict(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font_color="white",
+        )
+
+        # ── Tab 1: 개인별 통계 ──────────────────────
         with stat_tab1:
             st.markdown('<div class="section-header">개인별 성적 요약</div>', unsafe_allow_html=True)
 
@@ -916,21 +929,26 @@ elif "누적 통계" in menu:
                     평균순점=("net_score", "mean"),
                     최저타수=("score", "min"),
                     최고타수=("score", "max"),
+                    순점편차=("net_score", "std"),
                 )
                 .round(1)
                 .reset_index()
                 .sort_values("평균순점")
             )
 
+            # 최근 3경기 평균 (날짜 기준)
+            recent_avg = []
+            for name, grp in results_df.sort_values("date").groupby("name"):
+                last3 = grp.tail(3)["net_score"].mean()
+                recent_avg.append({"name": name, "최근3경기평균": round(last3, 1)})
+            player_stats = player_stats.merge(pd.DataFrame(recent_avg), on="name", how="left")
+
             # 개인전 우승 횟수
-            indiv = results_df[(results_df["mode"] == "개인전")].copy()
+            indiv = results_df[results_df["mode"] == "개인전"].copy()
             if not indiv.empty:
-                indiv["rank"] = pd.to_numeric(indiv["rank"], errors="coerce")
                 wins = (
                     indiv[indiv["rank"] == 1]
-                    .groupby("name")
-                    .size()
-                    .reset_index(name="우승횟수")
+                    .groupby("name").size().reset_index(name="우승횟수")
                 )
                 total_games_per_player = (
                     indiv.groupby("name")["game_id"].nunique().reset_index(name="개인전경기수")
@@ -942,8 +960,7 @@ elif "누적 통계" in menu:
                 ).round(1)
                 player_stats = player_stats.merge(
                     win_stats[["name", "우승횟수", "승률(%)"]],
-                    on="name",
-                    how="left",
+                    on="name", how="left",
                 ).fillna(0)
 
             st.dataframe(
@@ -955,8 +972,7 @@ elif "누적 통계" in menu:
             # 평균 순점 차트
             fig_bar = px.bar(
                 player_stats.sort_values("평균순점"),
-                x="name",
-                y="평균순점",
+                x="name", y="평균순점",
                 color="평균순점",
                 color_continuous_scale=["#27AE60", "#F2C94C", "#EB5757"],
                 title="개인별 평균 순점수 (낮을수록 우수)",
@@ -964,12 +980,29 @@ elif "누적 통계" in menu:
                 text="평균순점",
             )
             fig_bar.update_traces(texttemplate="%{text:.1f}", textposition="outside")
-            fig_bar.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font_color="white",
-            )
+            fig_bar.update_layout(**_chart_layout)
             st.plotly_chart(fig_bar, use_container_width=True)
+
+            # 최근 3경기 vs 전체 평균 비교
+            if len(player_stats) >= 2:
+                st.markdown('<div class="section-header">최근 3경기 vs 전체 평균 비교</div>', unsafe_allow_html=True)
+                compare_df = player_stats[["name", "평균순점", "최근3경기평균"]].dropna()
+                fig_cmp = go.Figure()
+                fig_cmp.add_trace(go.Bar(
+                    name="전체 평균", x=compare_df["name"], y=compare_df["평균순점"],
+                    marker_color="#2F80ED", text=compare_df["평균순점"],
+                    texttemplate="%{text:.1f}", textposition="outside",
+                ))
+                fig_cmp.add_trace(go.Bar(
+                    name="최근 3경기", x=compare_df["name"], y=compare_df["최근3경기평균"],
+                    marker_color="#F2C94C", text=compare_df["최근3경기평균"],
+                    texttemplate="%{text:.1f}", textposition="outside",
+                ))
+                fig_cmp.update_layout(
+                    barmode="group", title="전체 평균 vs 최근 3경기 순점",
+                    **_chart_layout,
+                )
+                st.plotly_chart(fig_cmp, use_container_width=True)
 
             # 레이더 차트
             if len(player_stats) >= 3:
@@ -981,38 +1014,236 @@ elif "누적 통계" in menu:
                 max_games = player_stats["경기수"].max()
                 min_score = results_df["score"].min()
                 max_score_val = results_df["score"].max()
-                categories = ["타수(역산)", "순점(역산)", "경기참여도"]
+                max_std = player_stats["순점편차"].max() if player_stats["순점편차"].max() > 0 else 1
+                categories = ["타수(역산)", "순점(역산)", "경기참여도", "안정성"]
 
                 for _, row in top_n.iterrows():
-                    score_norm = (
-                        (max_score_val - row["평균타수"]) / max(max_score_val - min_score, 1) * 100
-                    )
-                    net_norm = (
-                        (max_net - row["평균순점"]) / max(max_net - min_net, 1) * 100
-                    )
+                    score_norm = (max_score_val - row["평균타수"]) / max(max_score_val - min_score, 1) * 100
+                    net_norm = (max_net - row["평균순점"]) / max(max_net - min_net, 1) * 100
                     game_norm = row["경기수"] / max(max_games, 1) * 100
-                    vals = [score_norm, net_norm, game_norm]
-                    fig_radar.add_trace(
-                        go.Scatterpolar(
-                            r=vals + [vals[0]],
-                            theta=categories + [categories[0]],
-                            fill="toself",
-                            name=row["name"],
-                            opacity=0.75,
-                        )
-                    )
+                    std_val = row["순점편차"] if pd.notna(row["순점편차"]) else max_std
+                    stability = (1 - std_val / max_std) * 100
+                    vals = [score_norm, net_norm, game_norm, stability]
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=vals + [vals[0]],
+                        theta=categories + [categories[0]],
+                        fill="toself", name=row["name"], opacity=0.75,
+                    ))
                 fig_radar.update_layout(
-                    polar=dict(
-                        bgcolor="rgba(0,0,0,0)",
-                        radialaxis=dict(visible=True, range=[0, 100]),
-                    ),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font_color="white",
+                    polar=dict(bgcolor="rgba(0,0,0,0)", radialaxis=dict(visible=True, range=[0, 100])),
+                    paper_bgcolor="rgba(0,0,0,0)", font_color="white",
                     title="선수별 레이더 차트 (Top 5)",
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
 
+        # ── Tab 2: G핸디별 분석 ────────────────────
         with stat_tab2:
+            st.markdown('<div class="section-header">G핸디 구간별 성적 분석</div>', unsafe_allow_html=True)
+
+            def handi_label(h):
+                if h < 0:
+                    return "마이너스 (<0)"
+                elif h < 5:
+                    return "로우 (0~4)"
+                elif h < 10:
+                    return "미들로우 (5~9)"
+                elif h < 15:
+                    return "미들 (10~14)"
+                elif h < 20:
+                    return "미들하이 (15~19)"
+                else:
+                    return "하이 (20+)"
+
+            handi_order = ["마이너스 (<0)", "로우 (0~4)", "미들로우 (5~9)",
+                           "미들 (10~14)", "미들하이 (15~19)", "하이 (20+)"]
+
+            rdf = results_df.copy()
+            rdf["핸디구간"] = rdf["handicap"].apply(handi_label)
+
+            handi_stats = (
+                rdf.groupby("핸디구간")
+                .agg(
+                    인원수=("name", "nunique"),
+                    참가횟수=("game_id", "count"),
+                    평균타수=("score", "mean"),
+                    평균순점=("net_score", "mean"),
+                    평균핸디=("handicap", "mean"),
+                    최저순점=("net_score", "min"),
+                )
+                .round(1)
+                .reset_index()
+            )
+            handi_stats["핸디구간"] = pd.Categorical(
+                handi_stats["핸디구간"], categories=handi_order, ordered=True
+            )
+            handi_stats = handi_stats.sort_values("핸디구간")
+
+            st.dataframe(handi_stats, use_container_width=True, hide_index=True)
+
+            fig_h1 = px.bar(
+                handi_stats, x="핸디구간", y="평균순점",
+                color="평균순점",
+                color_continuous_scale=["#27AE60", "#F2C94C", "#EB5757"],
+                title="핸디 구간별 평균 순점수",
+                text="평균순점",
+            )
+            fig_h1.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+            fig_h1.update_layout(**_chart_layout)
+            st.plotly_chart(fig_h1, use_container_width=True)
+
+            fig_h2 = px.scatter(
+                rdf, x="handicap", y="net_score",
+                color="name", hover_data=["date", "score"],
+                trendline="ols",
+                title="G핸디 vs 순점 분포 (추세선 포함)",
+                labels={"handicap": "G핸디", "net_score": "순점", "name": "선수"},
+            )
+            fig_h2.update_layout(**_chart_layout)
+            st.plotly_chart(fig_h2, use_container_width=True)
+
+            # 개인별 핸디 변화 추이 (핸디가 여러 경기에서 다른 경우)
+            handi_trend = (
+                rdf.sort_values("date")
+                .groupby(["name", "date"])["handicap"]
+                .mean()
+                .reset_index()
+            )
+            handi_names = handi_trend["name"].unique().tolist()
+            if len(handi_names) >= 2:
+                st.markdown('<div class="section-header">선수별 G핸디 변화 추이</div>', unsafe_allow_html=True)
+                sel_h = st.multiselect(
+                    "선수 선택 (핸디 추이)", handi_names,
+                    default=handi_names[:min(4, len(handi_names))],
+                    key="handi_trend_sel",
+                )
+                if sel_h:
+                    fig_h3 = px.line(
+                        handi_trend[handi_trend["name"].isin(sel_h)],
+                        x="date", y="handicap", color="name", markers=True,
+                        title="선수별 G핸디 변화",
+                        labels={"date": "날짜", "handicap": "G핸디", "name": "선수"},
+                    )
+                    fig_h3.update_layout(**_chart_layout)
+                    st.plotly_chart(fig_h3, use_container_width=True)
+
+        # ── Tab 3: 팀별 분석 ───────────────────────
+        with stat_tab3:
+            team_df_raw = results_df[
+                (results_df["mode"] == "팀전") & results_df["team"].notna()
+            ].copy()
+
+            if team_df_raw.empty:
+                st.info("팀전 경기 데이터가 없습니다.")
+            else:
+                st.markdown('<div class="section-header">팀별 성적 요약</div>', unsafe_allow_html=True)
+
+                # 경기별 팀 순위 → 우승 집계
+                game_team = (
+                    team_df_raw.groupby(["game_id", "date", "team"])
+                    .agg(
+                        팀순점=("net_score", "sum"),
+                        팀타수=("score", "sum"),
+                        팀핸디=("handicap", "sum"),
+                        인원=("name", "nunique"),
+                    )
+                    .reset_index()
+                )
+                game_team["팀순위"] = (
+                    game_team.groupby("game_id")["팀순점"]
+                    .rank(method="min", ascending=True)
+                    .astype(int)
+                )
+
+                team_summary = (
+                    game_team.groupby("team")
+                    .agg(
+                        경기수=("game_id", "nunique"),
+                        우승횟수=("팀순위", lambda x: (x == 1).sum()),
+                        평균팀순점=("팀순점", "mean"),
+                        평균팀타수=("팀타수", "mean"),
+                        평균팀핸디=("팀핸디", "mean"),
+                    )
+                    .round(1)
+                    .reset_index()
+                )
+                team_summary["승률(%)"] = (
+                    team_summary["우승횟수"] / team_summary["경기수"] * 100
+                ).round(1)
+                team_summary = team_summary.sort_values("승률(%)", ascending=False)
+
+                st.dataframe(team_summary.rename(columns={"team": "팀"}),
+                             use_container_width=True, hide_index=True)
+
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                    fig_twin = px.bar(
+                        team_summary, x="team", y="우승횟수",
+                        color="team", title="팀별 우승 횟수",
+                        labels={"team": "팀", "우승횟수": "우승 횟수"},
+                        color_discrete_map={
+                            "A팀": "#2F80ED", "B팀": "#EB5757",
+                            "C팀": "#27AE60", "D팀": "#9B51E0",
+                        },
+                        text="우승횟수",
+                    )
+                    fig_twin.update_traces(textposition="outside")
+                    fig_twin.update_layout(**_chart_layout)
+                    st.plotly_chart(fig_twin, use_container_width=True)
+                with col_t2:
+                    fig_tnet = px.bar(
+                        team_summary.sort_values("평균팀순점"),
+                        x="team", y="평균팀순점",
+                        color="team", title="팀별 평균 팀순점 (낮을수록 강팀)",
+                        labels={"team": "팀", "평균팀순점": "평균 팀순점"},
+                        color_discrete_map={
+                            "A팀": "#2F80ED", "B팀": "#EB5757",
+                            "C팀": "#27AE60", "D팀": "#9B51E0",
+                        },
+                        text="평균팀순점",
+                    )
+                    fig_tnet.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+                    fig_tnet.update_layout(**_chart_layout)
+                    st.plotly_chart(fig_tnet, use_container_width=True)
+
+                # 경기별 팀 순점 변화
+                st.markdown('<div class="section-header">경기별 팀 순점 변화 추이</div>', unsafe_allow_html=True)
+                fig_tline = px.line(
+                    game_team.sort_values("date"),
+                    x="date", y="팀순점", color="team", markers=True,
+                    title="경기별 팀 순점 변화",
+                    labels={"date": "날짜", "팀순점": "팀 순점", "team": "팀"},
+                    color_discrete_map={
+                        "A팀": "#2F80ED", "B팀": "#EB5757",
+                        "C팀": "#27AE60", "D팀": "#9B51E0",
+                    },
+                )
+                fig_tline.update_layout(**_chart_layout)
+                st.plotly_chart(fig_tline, use_container_width=True)
+
+                # 팀원별 기여도 (팀전 개인 순점)
+                st.markdown('<div class="section-header">팀전 선수별 기여도 (평균 순점)</div>', unsafe_allow_html=True)
+                contrib = (
+                    team_df_raw.groupby(["team", "name"])
+                    .agg(평균순점=("net_score", "mean"), 경기수=("game_id", "nunique"))
+                    .round(1).reset_index()
+                    .sort_values(["team", "평균순점"])
+                )
+                fig_contrib = px.bar(
+                    contrib, x="name", y="평균순점", color="team",
+                    title="팀전 선수별 평균 순점 (낮을수록 기여도 높음)",
+                    labels={"name": "선수", "평균순점": "평균 순점", "team": "팀"},
+                    color_discrete_map={
+                        "A팀": "#2F80ED", "B팀": "#EB5757",
+                        "C팀": "#27AE60", "D팀": "#9B51E0",
+                    },
+                    text="평균순점", barmode="group",
+                )
+                fig_contrib.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+                fig_contrib.update_layout(**_chart_layout)
+                st.plotly_chart(fig_contrib, use_container_width=True)
+
+        # ── Tab 4: 경기 트렌드 ─────────────────────
+        with stat_tab4:
             st.markdown('<div class="section-header">경기별 순점 변화 추이</div>', unsafe_allow_html=True)
 
             all_players = sorted(results_df["name"].unique().tolist())
@@ -1028,18 +1259,11 @@ elif "누적 통계" in menu:
 
                 fig_line = px.line(
                     trend_data,
-                    x="date",
-                    y="net_score",
-                    color="name",
-                    markers=True,
+                    x="date", y="net_score", color="name", markers=True,
                     title="경기별 순점수 변화",
                     labels={"date": "날짜", "net_score": "순점수", "name": "선수"},
                 )
-                fig_line.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font_color="white",
-                )
+                fig_line.update_layout(**_chart_layout)
                 st.plotly_chart(fig_line, use_container_width=True)
 
             # 월별 경기 수
@@ -1051,18 +1275,12 @@ elif "누적 통계" in menu:
             )
             if not monthly.empty:
                 fig_monthly = px.area(
-                    monthly,
-                    x="month",
-                    y="경기수",
+                    monthly, x="month", y="경기수",
                     title="월별 경기 수",
                     labels={"month": "월", "경기수": "경기 수"},
                     color_discrete_sequence=["#2F80ED"],
                 )
-                fig_monthly.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font_color="white",
-                )
+                fig_monthly.update_layout(**_chart_layout)
                 st.plotly_chart(fig_monthly, use_container_width=True)
 
 
