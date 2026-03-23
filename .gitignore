@@ -18,6 +18,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Streamlit secrets (contains password - never commit)
+.streamlit/secrets.toml
+
 # Misc
 files.zip
 mnt/

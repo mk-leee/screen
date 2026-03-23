@@ -22,6 +22,27 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 # ──────────────────────────────────────────
+# 암호 보호
+# ──────────────────────────────────────────
+def check_password():
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("## 🔒 스크린골프 성적 관리")
+    pw = st.text_input("암호를 입력하세요", type="password", key="pw_input")
+    if st.button("확인"):
+        if pw == st.secrets.get("password", ""):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("암호가 틀렸습니다.")
+    return False
+
+if not check_password():
+    st.stop()
+
+
+# ──────────────────────────────────────────
 # 데이터 로드 / 저장 헬퍼
 # ──────────────────────────────────────────
 def load_json(path: str) -> list:
