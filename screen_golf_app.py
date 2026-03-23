@@ -323,7 +323,7 @@ if "경기 입력" in menu:
             new_name = st.text_input("👤 이름", key="new_name_input")
         with col2:
             new_handicap = st.number_input(
-                "🎯 G핸디", min_value=-30, max_value=50, value=0, key="new_handi_input"
+                "🎯 G핸디", min_value=-30.0, max_value=50.0, value=0.0, step=0.1, format="%.1f", key="new_handi_input"
             )
         with col3:
             if st.session_state["game_mode"] == "팀전":
@@ -565,7 +565,7 @@ elif "결과 확인" in menu:
                     <div class="golf-card" style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;">
                         <div style="font-size:1.5rem;">{medal}</div>
                         <div style="font-size:1.1rem;font-weight:700;color:white;">{row['name']}</div>
-                        <div style="color:rgba(255,255,255,0.6);">핸디: {int(row['handicap'])}</div>
+                        <div style="color:rgba(255,255,255,0.6);">핸디: {row['handicap']:.1f}</div>
                         <div style="color:rgba(255,255,255,0.6);">타수: {int(row['score'])}</div>
                         <div style="color:#56CCF2;font-weight:900;font-size:1.2rem;">순점: {int(row['net_score'])}</div>
                     </div>
@@ -624,7 +624,7 @@ elif "결과 확인" in menu:
                             </div>
                             <div style="color:rgba(255,255,255,0.7);">구성: {row['members']}</div>
                             <div style="color:rgba(255,255,255,0.7);">합산 타수: {int(row['total_score'])}</div>
-                            <div style="color:rgba(255,255,255,0.7);">합산 핸디: {int(row['total_handicap'])}</div>
+                            <div style="color:rgba(255,255,255,0.7);">합산 핸디: {row['total_handicap']:.1f}</div>
                             <div style="color:#56CCF2;font-weight:900;font-size:1.2rem;">순점: {int(row['net_score'])}</div>
                         </div>
                     </div>
