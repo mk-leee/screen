@@ -293,8 +293,11 @@ init_session()
 # ──────────────────────────────────────────
 # 사이드바 네비게이션
 # ──────────────────────────────────────────
+APP_VERSION = "v1.0.0"
+
 with st.sidebar:
-    st.markdown("## ⛳ 스크린골프 결과")
+    st.markdown(f"## ⛳ 스크린골프 결과")
+    st.caption(APP_VERSION)
     st.markdown("---")
     menu = st.radio(
         "메뉴",
