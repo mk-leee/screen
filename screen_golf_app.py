@@ -87,7 +87,7 @@ def analyze_golf_screenshot(image_bytes: bytes, media_type: str) -> list:
         return []
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     import PIL.Image
     import io
@@ -293,8 +293,11 @@ init_session()
 # ──────────────────────────────────────────
 # 사이드바 네비게이션
 # ──────────────────────────────────────────
+APP_VERSION = "v1.0.0"
+
 with st.sidebar:
-    st.markdown("## ⛳ 스크린골프 결과")
+    st.markdown(f"## ⛳ 스크린골프 결과")
+    st.caption(APP_VERSION)
     st.markdown("---")
     menu = st.radio(
         "메뉴",
