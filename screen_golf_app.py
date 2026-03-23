@@ -87,7 +87,7 @@ def analyze_golf_screenshot(image_bytes: bytes, media_type: str) -> list:
         return []
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     import PIL.Image
     import io
