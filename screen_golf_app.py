@@ -12,8 +12,7 @@ from datetime import date
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
-import gspread
-from google.oauth2.service_account import Credentials
+import requests
 
 # ──────────────────────────────────────────
 # 설정 & 상수
@@ -22,12 +21,14 @@ GAMES_FILE = "games"
 RESULTS_FILE = "results"
 PLAYERS_FILE = "players"
 
-SHEET_HEADERS = {
-    "games":   ["game_id", "date", "venue", "field", "mode", "player_count"],
-    "results": ["game_id", "date", "venue", "field", "mode", "name",
-                "handicap", "score", "net_score", "team", "rank", "is_winner"],
-    "players": ["name", "handicap"],
-}
+_GIST_API = "https://api.github.com/gists"
+
+
+def _gh_headers():
+    return {
+        "Authorization": f"token {st.secrets['GITHUB_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json",
+    }
 
 
 # ──────────────────────────────────────────
@@ -52,47 +53,29 @@ if not check_password():
 
 
 # ──────────────────────────────────────────
-# Google Sheets 연결
-# ──────────────────────────────────────────
-@st.cache_resource
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"], scopes=scopes
-    )
-    return gspread.authorize(creds)
-
-
-def get_worksheet(sheet_name: str):
-    client = get_gspread_client()
-    spreadsheet = client.open_by_key(st.secrets["GOOGLE_SHEET_ID"])
-    try:
-        ws = spreadsheet.worksheet(sheet_name)
-    except gspread.WorksheetNotFound:
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
-        ws.append_row(SHEET_HEADERS[sheet_name])
-    return ws
-
-
-# ──────────────────────────────────────────
-# 데이터 로드 / 저장 헬퍼
+# 데이터 로드 / 저장 헬퍼 (GitHub Gist)
 # ──────────────────────────────────────────
 @st.cache_data(ttl=30)
-def load_json(sheet_name: str) -> list:
-    ws = get_worksheet(sheet_name)
-    return ws.get_all_records()
+def load_json(file_name: str) -> list:
+    gist_id = st.secrets["GIST_ID"]
+    r = requests.get(f"{_GIST_API}/{gist_id}", headers=_gh_headers(), timeout=10)
+    r.raise_for_status()
+    content = r.json()["files"][f"{file_name}.json"]["content"]
+    return json.loads(content)
 
 
-def save_json(sheet_name: str, data: list):
-    ws = get_worksheet(sheet_name)
-    ws.clear()
-    headers = SHEET_HEADERS[sheet_name]
-    ws.append_row(headers)
-    for row in data:
-        ws.append_row([row.get(h, "") for h in headers])
+def save_json(file_name: str, data: list):
+    gist_id = st.secrets["GIST_ID"]
+    payload = {
+        "files": {
+            f"{file_name}.json": {
+                "content": json.dumps(data, ensure_ascii=False, indent=2)
+            }
+        }
+    }
+    r = requests.patch(f"{_GIST_API}/{gist_id}", headers=_gh_headers(),
+                       json=payload, timeout=10)
+    r.raise_for_status()
     load_json.clear()
 
 
