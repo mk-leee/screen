@@ -609,6 +609,7 @@ if "경기 입력" in menu:
                     "팀": p.get("team") or "-",
                     "핸디": p["handicap"],
                     "타수": p["score"],
+                    "결과 (vs 72타)": f"+{p['score'] - 72}" if p["score"] - 72 > 0 else str(p["score"] - 72) if p["score"] - 72 < 0 else "E",
                     "순점 (타수-핸디)": p["score"] - p["handicap"],
                 }
                 for p in updated_players
@@ -736,6 +737,9 @@ elif "결과 확인" in menu:
                         <div style="font-size:1.1rem;font-weight:700;color:white;">{row['name']}</div>
                         <div style="color:rgba(255,255,255,0.6);">핸디: {row['handicap']:.1f}</div>
                         <div style="color:rgba(255,255,255,0.6);">타수: {int(row['score'])}</div>
+                        <div style="color:{'#EB5757' if int(row['score']) - 72 > 0 else '#27AE60' if int(row['score']) - 72 < 0 else '#F2C94C'};font-weight:700;">
+                            결과: {'+' + str(int(row['score']) - 72) if int(row['score']) - 72 > 0 else 'E' if int(row['score']) - 72 == 0 else str(int(row['score']) - 72)}
+                        </div>
                         <div style="color:#56CCF2;font-weight:900;font-size:1.2rem;">순점: {int(row['net_score'])}</div>
                     </div>
                     """,
@@ -793,6 +797,9 @@ elif "결과 확인" in menu:
                             </div>
                             <div style="color:rgba(255,255,255,0.7);">구성: {row['members']}</div>
                             <div style="color:rgba(255,255,255,0.7);">합산 타수: {int(row['total_score'])}</div>
+                            <div style="color:{'#EB5757' if int(row['total_score']) - 72 > 0 else '#27AE60' if int(row['total_score']) - 72 < 0 else '#F2C94C'};font-weight:700;">
+                                결과: {'+' + str(int(row['total_score']) - 72) if int(row['total_score']) - 72 > 0 else 'E' if int(row['total_score']) - 72 == 0 else str(int(row['total_score']) - 72)}
+                            </div>
                             <div style="color:rgba(255,255,255,0.7);">합산 핸디: {row['total_handicap']:.1f}</div>
                             <div style="color:#56CCF2;font-weight:900;font-size:1.2rem;">순점: {int(row['net_score'])}</div>
                         </div>
