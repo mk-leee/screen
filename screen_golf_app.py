@@ -12,16 +12,22 @@ from datetime import date
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ──────────────────────────────────────────
 # 설정 & 상수
 # ──────────────────────────────────────────
-DATA_DIR = "golf_data"
-GAMES_FILE = os.path.join(DATA_DIR, "games.json")
-RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
-PLAYERS_FILE = os.path.join(DATA_DIR, "players.json")
+GAMES_FILE = "games"
+RESULTS_FILE = "results"
+PLAYERS_FILE = "players"
 
-os.makedirs(DATA_DIR, exist_ok=True)
+SHEET_HEADERS = {
+    "games":   ["game_id", "date", "venue", "field", "mode", "player_count"],
+    "results": ["game_id", "date", "venue", "field", "mode", "name",
+                "handicap", "score", "net_score", "team", "rank", "is_winner"],
+    "players": ["name", "handicap"],
+}
 
 
 # ──────────────────────────────────────────
@@ -46,18 +52,48 @@ if not check_password():
 
 
 # ──────────────────────────────────────────
+# Google Sheets 연결
+# ──────────────────────────────────────────
+@st.cache_resource
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=scopes
+    )
+    return gspread.authorize(creds)
+
+
+def get_worksheet(sheet_name: str):
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(st.secrets["GOOGLE_SHEET_ID"])
+    try:
+        ws = spreadsheet.worksheet(sheet_name)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+        ws.append_row(SHEET_HEADERS[sheet_name])
+    return ws
+
+
+# ──────────────────────────────────────────
 # 데이터 로드 / 저장 헬퍼
 # ──────────────────────────────────────────
-def load_json(path: str) -> list:
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+@st.cache_data(ttl=30)
+def load_json(sheet_name: str) -> list:
+    ws = get_worksheet(sheet_name)
+    return ws.get_all_records()
 
 
-def save_json(path: str, data: list):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def save_json(sheet_name: str, data: list):
+    ws = get_worksheet(sheet_name)
+    ws.clear()
+    headers = SHEET_HEADERS[sheet_name]
+    ws.append_row(headers)
+    for row in data:
+        ws.append_row([row.get(h, "") for h in headers])
+    load_json.clear()
 
 
 def get_games_df() -> pd.DataFrame:
